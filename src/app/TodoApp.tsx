@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { formatLongDate, todayKey } from "@/lib/date";
 import {
   getServerSnapshot,
   getSnapshot,
@@ -8,8 +9,18 @@ import {
   todoActions,
   type Todo,
 } from "@/lib/todoStore";
+import AddTodoForm from "./components/AddTodoForm";
+import Calendar from "./components/Calendar";
+import TodoItem from "./components/TodoItem";
 
+type View = "list" | "calendar";
 type Filter = "all" | "active" | "completed";
+type Sort = "created" | "due";
+
+const VIEWS: { key: View; label: string }[] = [
+  { key: "list", label: "リスト" },
+  { key: "calendar", label: "カレンダー" },
+];
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "すべて" },
@@ -20,14 +31,29 @@ const FILTERS: { key: Filter; label: string }[] = [
 const isHydrated = () => true;
 const noopSubscribe = () => () => {};
 
+function segmentClass(active: boolean) {
+  return `rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+    active ? "bg-surface text-foreground shadow-sm" : "text-muted hover:text-foreground"
+  }`;
+}
+
+/** 期限が近い順。期限なしは最後、同じ期限なら追加順を保つ */
+function byDue(a: Todo, b: Todo) {
+  if (a.dueDate === b.dueDate) return 0;
+  if (!a.dueDate) return 1;
+  if (!b.dueDate) return -1;
+  return a.dueDate < b.dueDate ? -1 : 1;
+}
+
 export default function TodoApp() {
   const todos = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  // サーバー描画中は localStorage が読めないので、空状態のちらつきを避ける
+  // サーバー描画中は localStorage や「今日」が確定しないので、描画をクライアントに任せる
   const hydrated = useSyncExternalStore(noopSubscribe, isHydrated, () => false);
-  const [draft, setDraft] = useState("");
+  const [view, setView] = useState<View>("list");
   const [filter, setFilter] = useState<Filter>("all");
+  const [sort, setSort] = useState<Sort>("created");
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [undo, setUndo] = useState<{ todo: Todo; index: number } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!undo) return;
@@ -35,21 +61,22 @@ export default function TodoApp() {
     return () => clearTimeout(timer);
   }, [undo]);
 
+  if (!hydrated) {
+    return (
+      <main className="mx-auto w-full max-w-2xl px-4 py-10 sm:py-16">
+        <h1 className="text-3xl font-bold tracking-tight">ToDo リスト</h1>
+        <p className="mt-1 text-sm text-muted">読み込み中…</p>
+      </main>
+    );
+  }
+
+  const today = todayKey();
+  const selected = selectedDate ?? today;
   const activeCount = todos.filter((t) => !t.completed).length;
   const completedCount = todos.length - activeCount;
+  const overdueCount = todos.filter((t) => !t.completed && t.dueDate && t.dueDate < today).length;
+  const dueTodayCount = todos.filter((t) => !t.completed && t.dueDate === today).length;
   const progress = todos.length ? Math.round((completedCount / todos.length) * 100) : 0;
-  const visible = todos.filter((t) =>
-    filter === "all" ? true : filter === "active" ? !t.completed : t.completed,
-  );
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!draft.trim()) return;
-    todoActions.add(draft);
-    setDraft("");
-    if (filter === "completed") setFilter("all");
-    inputRef.current?.focus();
-  }
 
   function handleRemove(todo: Todo) {
     const index = todos.findIndex((t) => t.id === todo.id);
@@ -57,16 +84,52 @@ export default function TodoApp() {
     setUndo({ todo, index });
   }
 
+  const renderItems = (items: Todo[]) => (
+    <ul className="space-y-2">
+      {items.map((todo) => (
+        <TodoItem key={todo.id} todo={todo} today={today} onRemove={() => handleRemove(todo)} />
+      ))}
+    </ul>
+  );
+
   return (
-    <main className="mx-auto w-full max-w-xl px-4 py-10 sm:py-16">
+    <main
+      className={`mx-auto w-full px-4 py-10 sm:py-16 ${view === "calendar" ? "max-w-4xl" : "max-w-2xl"}`}
+    >
       <header className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight">ToDo リスト</h1>
-        <p className="mt-1 text-sm text-muted">
-          {hydrated
-            ? todos.length === 0
-              ? "今日やることを書き出してみましょう"
-              : `残り ${activeCount} 件 / 全 ${todos.length} 件`
-            : "読み込み中…"}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-3xl font-bold tracking-tight">ToDo リスト</h1>
+          <div role="tablist" aria-label="表示の切り替え" className="flex gap-1 rounded-xl bg-track p-1">
+            {VIEWS.map((v) => (
+              <button
+                key={v.key}
+                role="tab"
+                aria-selected={view === v.key}
+                onClick={() => setView(v.key)}
+                className={segmentClass(view === v.key)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted">
+          {todos.length === 0 ? (
+            <span>今日やることを書き出してみましょう</span>
+          ) : (
+            <>
+              <span>
+                残り {activeCount} 件 / 全 {todos.length} 件
+              </span>
+              {overdueCount > 0 && (
+                <span className="font-semibold text-danger">期限切れ {overdueCount} 件</span>
+              )}
+              {dueTodayCount > 0 && (
+                <span className="font-semibold text-warning">今日まで {dueTodayCount} 件</span>
+              )}
+            </>
+          )}
         </p>
         {todos.length > 0 && (
           <div
@@ -85,87 +148,47 @@ export default function TodoApp() {
         )}
       </header>
 
-      <form onSubmit={handleSubmit} className="mb-4 flex gap-2">
-        <label htmlFor="new-todo" className="sr-only">
-          新しいタスク
-        </label>
-        <input
-          id="new-todo"
-          ref={inputRef}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="新しいタスクを入力して Enter"
-          maxLength={200}
-          autoComplete="off"
-          autoFocus
-          className="min-w-0 flex-1 rounded-xl border border-line bg-surface px-4 py-3 text-base shadow-sm outline-none transition placeholder:text-muted focus:border-accent focus:ring-4 focus:ring-accent/20"
+      {view === "list" ? (
+        <ListView
+          todos={todos}
+          today={today}
+          filter={filter}
+          sort={sort}
+          completedCount={completedCount}
+          onFilter={setFilter}
+          onSort={setSort}
+          renderItems={renderItems}
         />
-        <button
-          type="submit"
-          disabled={!draft.trim()}
-          className="shrink-0 rounded-xl bg-accent px-5 py-3 font-semibold text-white shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          追加
-        </button>
-      </form>
-
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div role="tablist" aria-label="表示の絞り込み" className="flex gap-1 rounded-xl bg-track p-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              role="tab"
-              aria-selected={filter === f.key}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
-                filter === f.key
-                  ? "bg-surface text-foreground shadow-sm"
-                  : "text-muted hover:text-foreground"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-        {completedCount > 0 && (
-          <button
-            onClick={todoActions.clearCompleted}
-            className="rounded-lg px-2 py-1.5 text-sm text-muted transition hover:text-danger"
-          >
-            完了済みを削除
-          </button>
-        )}
-      </div>
-
-      <ul className="space-y-2">
-        {visible.map((todo) => (
-          <TodoItem key={todo.id} todo={todo} onRemove={() => handleRemove(todo)} />
-        ))}
-      </ul>
-
-      {hydrated && visible.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-line px-6 py-12 text-center text-muted">
-          <p className="text-4xl" aria-hidden>
-            {filter === "completed" ? "📝" : "🎉"}
-          </p>
-          <p className="mt-2 text-sm">
-            {todos.length === 0
-              ? "タスクはまだありません"
-              : filter === "active"
-                ? "未完了のタスクはありません。お疲れさまでした！"
-                : "完了したタスクはまだありません"}
-          </p>
-        </div>
+      ) : (
+        <>
+          <Calendar todos={todos} today={today} selected={selected} onSelect={setSelectedDate} />
+          <section aria-label={`${formatLongDate(selected)}のタスク`}>
+            <h2 className="mb-3 text-lg font-bold">
+              {formatLongDate(selected)}
+              {selected === today && <span className="ml-2 text-sm font-medium text-accent">今日</span>}
+              <span className="ml-2 text-sm font-normal text-muted">が期限のタスク</span>
+            </h2>
+            <AddTodoForm key={selected} today={today} fixedDate={selected} />
+            {(() => {
+              const items = todos.filter((t) => t.dueDate === selected);
+              return items.length ? (
+                renderItems(items)
+              ) : (
+                <EmptyState icon="🗓️" message="この日が期限のタスクはありません" />
+              );
+            })()}
+          </section>
+        </>
       )}
 
       <p className="mt-8 text-center text-xs text-muted">
-        ダブルクリックでタスク名を編集 ・ データはこのブラウザに保存されます
+        ダブルクリックでタスク名を編集 ・ 期限バッジをクリックで日付を変更 ・ データはこのブラウザに保存されます
       </p>
 
       {undo && (
         <div
           role="status"
-          className="fixed inset-x-4 bottom-6 mx-auto flex max-w-md items-center justify-between gap-4 rounded-xl bg-foreground px-4 py-3 text-sm text-background shadow-lg"
+          className="fixed inset-x-4 bottom-6 z-20 mx-auto flex max-w-md items-center justify-between gap-4 rounded-xl bg-foreground px-4 py-3 text-sm text-background shadow-lg"
         >
           <span className="truncate">「{undo.todo.title}」を削除しました</span>
           <button
@@ -183,65 +206,97 @@ export default function TodoApp() {
   );
 }
 
-function TodoItem({ todo, onRemove }: { todo: Todo; onRemove: () => void }) {
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(todo.title);
-
-  function commit() {
-    if (text.trim()) todoActions.rename(todo.id, text);
-    else setText(todo.title);
-    setEditing(false);
-  }
+function ListView({
+  todos,
+  today,
+  filter,
+  sort,
+  completedCount,
+  onFilter,
+  onSort,
+  renderItems,
+}: {
+  todos: Todo[];
+  today: string;
+  filter: Filter;
+  sort: Sort;
+  completedCount: number;
+  onFilter: (f: Filter) => void;
+  onSort: (s: Sort) => void;
+  renderItems: (items: Todo[]) => React.ReactNode;
+}) {
+  const filtered = todos.filter((t) =>
+    filter === "all" ? true : filter === "active" ? !t.completed : t.completed,
+  );
+  const visible = sort === "due" ? [...filtered].sort(byDue) : filtered;
 
   return (
-    <li className="group flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 shadow-sm transition hover:shadow-md">
-      <input
-        type="checkbox"
-        checked={todo.completed}
-        onChange={() => todoActions.toggle(todo.id)}
-        aria-label={`「${todo.title}」を${todo.completed ? "未完了に戻す" : "完了にする"}`}
-        className="size-5 shrink-0 cursor-pointer accent-success"
-      />
-      {editing ? (
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") {
-              setText(todo.title);
-              setEditing(false);
-            }
-          }}
-          maxLength={200}
-          autoFocus
-          aria-label="タスク名を編集"
-          className="min-w-0 flex-1 rounded-md border border-accent bg-transparent px-2 py-0.5 outline-none"
-        />
+    <>
+      <AddTodoForm today={today} onAdded={() => filter === "completed" && onFilter("all")} />
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div role="tablist" aria-label="表示の絞り込み" className="flex gap-1 rounded-xl bg-track p-1">
+          {FILTERS.map((f) => (
+            <button
+              key={f.key}
+              role="tab"
+              aria-selected={filter === f.key}
+              onClick={() => onFilter(f.key)}
+              className={segmentClass(filter === f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="sr-only" htmlFor="sort">
+            並び順
+          </label>
+          <select
+            id="sort"
+            value={sort}
+            onChange={(e) => onSort(e.target.value as Sort)}
+            className="rounded-lg border border-line bg-surface px-2 py-1.5 text-sm outline-none focus:border-accent"
+          >
+            <option value="created">追加が新しい順</option>
+            <option value="due">期限が近い順</option>
+          </select>
+          {completedCount > 0 && (
+            <button
+              onClick={todoActions.clearCompleted}
+              className="rounded-lg px-2 py-1.5 text-sm text-muted transition hover:text-danger"
+            >
+              完了済みを削除
+            </button>
+          )}
+        </div>
+      </div>
+
+      {visible.length > 0 ? (
+        renderItems(visible)
       ) : (
-        <span
-          onDoubleClick={() => {
-            setText(todo.title);
-            setEditing(true);
-          }}
-          className={`min-w-0 flex-1 break-words transition ${
-            todo.completed ? "text-muted line-through" : ""
-          }`}
-        >
-          {todo.title}
-        </span>
+        <EmptyState
+          icon={filter === "completed" ? "📝" : "🎉"}
+          message={
+            todos.length === 0
+              ? "タスクはまだありません"
+              : filter === "active"
+                ? "未完了のタスクはありません。お疲れさまでした！"
+                : "完了したタスクはまだありません"
+          }
+        />
       )}
-      <button
-        onClick={onRemove}
-        aria-label={`「${todo.title}」を削除`}
-        title="削除"
-        className="shrink-0 rounded-lg p-1.5 text-muted transition hover:bg-danger/10 hover:text-danger focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
-      >
-        <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
-        </svg>
-      </button>
-    </li>
+    </>
+  );
+}
+
+function EmptyState({ icon, message }: { icon: string; message: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-line px-6 py-12 text-center text-muted">
+      <p className="text-4xl" aria-hidden>
+        {icon}
+      </p>
+      <p className="mt-2 text-sm">{message}</p>
+    </div>
   );
 }

@@ -3,6 +3,8 @@ export type Todo = {
   title: string;
   completed: boolean;
   createdAt: number;
+  /** 期限（ローカル日付 "YYYY-MM-DD"）。未設定なら null/undefined */
+  dueDate?: string | null;
 };
 
 const STORAGE_KEY = "todo-app:v1";
@@ -63,13 +65,16 @@ function newId() {
 }
 
 export const todoActions = {
-  add(title: string) {
+  add(title: string, dueDate: string | null = null) {
     const trimmed = title.trim();
     if (!trimmed) return;
     save([
-      { id: newId(), title: trimmed, completed: false, createdAt: Date.now() },
+      { id: newId(), title: trimmed, completed: false, createdAt: Date.now(), dueDate },
       ...getSnapshot(),
     ]);
+  },
+  setDue(id: string, dueDate: string | null) {
+    save(getSnapshot().map((t) => (t.id === id ? { ...t, dueDate } : t)));
   },
   toggle(id: string) {
     save(

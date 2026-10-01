@@ -11,6 +11,7 @@
   --accent-soft: #9db0ff;
   --success: #22a565;
   --danger: #e5484d;
+  --warning: #d97706;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -25,6 +26,7 @@
     --accent-soft: #3b56d4;
     --success: #34c27a;
     --danger: #ff6b6f;
+    --warning: #f5a524;
   }
 }
 
@@ -39,6 +41,7 @@
   --color-accent-soft: var(--accent-soft);
   --color-success: var(--success);
   --color-danger: var(--danger);
+  --color-warning: var(--warning);
   --font-sans: var(--font-noto-sans-jp), system-ui, sans-serif;
 }
 
