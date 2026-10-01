@@ -2,6 +2,8 @@
 
 Next.js で作成したシンプルな ToDo リスト Web アプリです。
 
+**公開 URL: https://todo-app-mu-jet.vercel.app/**
+
 ## 機能
 
 - タスクの **追加**（Enter キーでも追加可）
