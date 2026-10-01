@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ToDo リスト
 
-## Getting Started
+Next.js で作成したシンプルな ToDo リスト Web アプリです。
 
-First, run the development server:
+## 機能
+
+- タスクの **追加**（Enter キーでも追加可）
+- **完了マーク**（チェックボックスで切替、完了率をプログレスバーで表示）
+- **削除**（削除後 5 秒間は「元に戻す」が可能）
+- 完了済みタスクの一括削除
+- 「すべて / 未完了 / 完了」での絞り込み
+- タスク名のダブルクリック編集（Enter で確定、Esc でキャンセル）
+- **データ永続化**：`localStorage` に保存するため、ブラウザを閉じても残ります（別タブの変更も同期）
+- ダークモード・スマホ表示に対応、スクリーンリーダー向けラベル付き
+
+## 技術スタック
+
+- Next.js (App Router) / React / TypeScript
+- Tailwind CSS
+- Vercel でホスティング
+
+## ローカルでの起動
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+http://localhost:3000 を開いてください。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 構成
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| ファイル | 役割 |
+| --- | --- |
+| `src/lib/todoStore.ts` | localStorage と同期するストア（`useSyncExternalStore` 用） |
+| `src/app/TodoApp.tsx` | 画面本体（クライアントコンポーネント） |
+| `src/app/page.tsx` | トップページ |
